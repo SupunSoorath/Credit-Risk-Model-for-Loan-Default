@@ -1,0 +1,174 @@
+---
+title: "uiwuev"
+author: "uifa"
+date: "2024-01-08"
+output: html_document
+---
+
+```{r}
+
+#Install and Load Required Packages
+library(dplyr)
+library(ggplot2)
+library(openxlsx)
+library(ggcorrplot)
+library(randomForest)
+library(lmtest)
+library(AER)
+
+```
+
+
+```{r}
+#Import the data Set
+loan_data=read.csv("E:\\3rd Year- UOR\\2nd Sem\\R Programming\\loan.csv",fileEncoding = "latin1")
+```
+
+
+```{r}
+#Clean the data
+#remove missing values(Null or NA)
+loan_data <- na.omit(loan_data)
+
+
+#Replace Missing Values
+#Create a function for replacing missing values with the column mean
+replace_na_with_mean <- function(column) {
+ifelse(is.na(column), ave(column, FUN = function(x) mean(x, na.rm = TRUE)), column)
+  
+# Remove duplicate rows
+loan_data <- loan_data[!duplicated(loan_data), ]
+
+
+  
+  
+}
+
+#List of columns to process
+columns_to_process <- c("loan_amnt", "term", "int_rate", "installment", 
+                         "grade", "emp_length", "home_ownership", 
+                         "annual_inc", "loan_status", "purpose", 
+                         "dti", "delinq_2yrs", "open_acc", 
+                         "pub_rec", "revol_util", "total_acc", 
+                         "total_pymnt_inv", "total_rec_prncp", 
+                         "total_rec_int", "repay_fail")
+# Apply the function to each column in the list
+loan_data[, columns_to_process] <- lapply(loan_data[, columns_to_process], replace_na_with_mean)
+
+
+#Covert categorical variables values into Numerical variables values
+loan_data[c("term", "grade", "emp_length", "home_ownership", "loan_status", "purpose")] <- lapply(loan_data[c("term", "grade", "emp_length", "home_ownership", "loan_status", "purpose")], factor)
+loan_data <- na.omit(loan_data)
+
+#Write the new excel file 
+write.csv(loan_data, "output_file.csv", row.names = FALSE)
+
+#Import new data
+loan_data_new=read.csv("C:\\Users\\Supun\\Desktop\\Final\\output_file.csv")
+
+#Explore the structure of the dataset
+loan_data_new <- na.omit(loan_data_new)
+View(loan_data_new)
+```
+
+
+
+```{r}
+#Calculate the correlation matrix
+cor_matrix <- cor(loan_data_new[, sapply(loan_data_new, is.numeric)])
+#Visualizing the correlation matrix with ggcorrplot
+ggcorrplot(cor_matrix,hc.order = TRUE,type="lower",lab = TRUE,lab_size = 1)
+#Building a random forest model to predict 'repay_fail' based on all features
+model_rf <- randomForest(repay_fail ~ ., data = loan_data_new)
+varImpPlot(model_rf)
+```
+
+01) logit:
+
+Description: The logistic link function is commonly used for binary regression , predictors to the range [0, 1], representing probabilities.
+
+```{r}
+#model of the logit link function
+model_logit<- glm(repay_fail ~ installment + total_pymnt_inv + loan_amnt + total_rec_prncp + loan_status, 
+            family = binomial(link = "logit"), data = loan_data_new)
+
+plot(model_logit)
+summary(model_logit)
+```
+
+02) probit:
+
+Description: The probit link function is an alternative to the logistic link and is also used for binary regression. It is based on the cumulative distribution function (CDF) of the standard normal distribution.
+
+```{r}
+#model of the probit link function
+model_probit <- glm(repay_fail ~ installment + total_pymnt_inv + loan_amnt + total_rec_prncp + loan_status, 
+            family = binomial(link = "probit"), data = loan_data_new)
+
+plot(model_probit)
+summary(model_probit)
+```
+
+
+03) cloglog:
+
+Description: The complementary log-log link function is often used for survival analysis and binary regression.
+
+```{r}
+#model of the cloglog link function
+model_cloglog <- glm(repay_fail ~ installment + total_pymnt_inv + loan_amnt + total_rec_prncp + loan_status, 
+            family = binomial(link = "cloglog"), data = loan_data_new)
+
+plot(model_cloglog)
+summary(model_cloglog)
+```
+
+
+```{r}
+#Assuming 'model_logit' is your logistic regression model
+
+#1.inearity of Log Odds
+#Diagnostic Plot
+plot(model_logit$fitted.values, residuals(model_logit, type = "pearson"),
+     xlab = "Fitted values", ylab = "Pearson Residuals")
+
+#2.Independence of Observations
+#Durbin-Watson Test
+dwtest(model_logit)
+
+#3.Homoscedasticity
+#Scale-Location Plot
+plot(predict(model_logit), sqrt(abs(residuals(model_logit))),
+     xlab = "Fitted values", ylab = "Square root of absolute Pearson Residuals")
+
+#4.Deviance Residuals
+#Residual vs. Fitted Values Plot
+plot(fitted(model_logit), residuals(model_logit, type = "deviance"),
+     xlab = "Fitted values", ylab = "Deviance Residuals")
+
+#5.Overdispersion
+#Dispersion Test
+bptest(model_logit)
+
+#Additional checks as needed for your specific model
+
+#For model summary and overall assessment
+summary(model_logit)
+```
+
+
+Comparing AIC values of each model :
+model_logit AIC:1530.4  < model_probit AIC: 1602.3 < model_cloglog AIC: 1615.1
+
+using these 3 models,model_logit has the minimum AIC value so we use model_Logit link function to get prediction. 
+
+
+```{r}
+#The predicted values represent the estimated probabilities of success
+new_data <- data.frame(installment = c(240,457.25), total_pymnt_inv = c(7811.26,5368.15), loan_amnt = c(9000,6250), total_rec_prncp  = c(4500.00,7999.97), loan_status = c(2,1))
+#plot(loan_data_new$repay_fail, predict(model_logit, type = "response"), main = "Actual vs. Predicted", xlab = "Actual", ylab = "Predicted")
+
+predictions <- predict(model_logit, newdata = new_data, type = "response")
+predictions
+```
+
